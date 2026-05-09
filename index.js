@@ -1,7 +1,6 @@
-const fs = require("fs");
-const path = require("path");
 const express = require("express");
 const dotenv = require("dotenv");
+const { createClient } = require("@supabase/supabase-js");
 
 const {
 	Client,
@@ -17,65 +16,135 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const WHITELIST_FILE = path.join(__dirname, "whitelist.json");
+const supabase = createClient(
+	process.env.SUPABASE_URL,
+	process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-function carregarWhitelist() {
-	if (!fs.existsSync(WHITELIST_FILE)) {
-		fs.writeFileSync(WHITELIST_FILE, JSON.stringify({ places: [] }, null, 2));
+const SISTEMAS_VALIDOS = ["atm", "bodycam"];
+
+function normalizarSistema(sistema) {
+	if (!sistema) return "atm";
+
+	sistema = String(sistema).toLowerCase();
+
+	if (!SISTEMAS_VALIDOS.includes(sistema)) {
+		return null;
 	}
 
-	const raw = fs.readFileSync(WHITELIST_FILE, "utf8");
-	return JSON.parse(raw);
+	return sistema;
 }
 
-function salvarWhitelist(data) {
-	fs.writeFileSync(WHITELIST_FILE, JSON.stringify(data, null, 2));
+async function placeEstaLiberado(sistema, placeId) {
+	const { data, error } = await supabase
+		.from("whitelist_places")
+		.select("id")
+		.eq("sistema", sistema)
+		.eq("place_id", String(placeId))
+		.maybeSingle();
+
+	if (error) {
+		console.error("Erro ao consultar Supabase:", error);
+		return false;
+	}
+
+	return !!data;
 }
 
-function placeEstaLiberado(placeId) {
-	const data = carregarWhitelist();
-	return data.places.includes(String(placeId));
+async function liberarPlace(sistema, placeId) {
+	const { error } = await supabase
+		.from("whitelist_places")
+		.upsert(
+			{
+				sistema: sistema,
+				place_id: String(placeId)
+			},
+			{
+				onConflict: "sistema,place_id"
+			}
+		);
+
+	if (error) {
+		console.error("Erro ao liberar PlaceId:", error);
+		return false;
+	}
+
+	return true;
 }
+
+async function removerPlace(sistema, placeId) {
+	const { error } = await supabase
+		.from("whitelist_places")
+		.delete()
+		.eq("sistema", sistema)
+		.eq("place_id", String(placeId));
+
+	if (error) {
+		console.error("Erro ao remover PlaceId:", error);
+		return false;
+	}
+
+	return true;
+}
+
+async function listarPlaces(sistema) {
+	const { data, error } = await supabase
+		.from("whitelist_places")
+		.select("place_id")
+		.eq("sistema", sistema)
+		.order("created_at", { ascending: true });
+
+	if (error) {
+		console.error("Erro ao listar PlaceIds:", error);
+		return [];
+	}
+
+	return data.map(item => item.place_id);
+}
+
+// ROTA DE TESTE
+app.get("/", (req, res) => {
+	res.send("API de whitelist online com Supabase.");
+});
 
 // ROTA NORMAL
-app.get("/check", (req, res) => {
+app.get("/check", async (req, res) => {
 	const placeId = req.query.placeId;
+	const sistema = normalizarSistema(req.query.s || "atm");
 
-	if (!placeId) {
+	if (!sistema || !placeId) {
 		return res.json({
-			allowed: false,
-			reason: "PlaceId não enviado."
+			allowed: false
 		});
 	}
 
-	const allowed = placeEstaLiberado(placeId);
+	const allowed = await placeEstaLiberado(sistema, placeId);
 
 	return res.json({
 		allowed: allowed,
+		sistema: sistema,
 		placeId: String(placeId)
 	});
 });
 
-// ROTA ESCONDIDA PARA O SCRIPT OFUSCADO
-app.get("/c", (req, res) => {
-	const p = req.query.p;
+// ROTA CURTA PARA O ROBLOX
+// Exemplo: /c?s=atm&p=84715284711667
+// Exemplo: /c?s=bodycam&p=84715284711667
+app.get("/c", async (req, res) => {
+	const sistema = normalizarSistema(req.query.s || "atm");
+	const placeId = req.query.p;
 
-	if (!p) {
+	if (!sistema || !placeId) {
 		return res.json({
 			a: false
 		});
 	}
 
-	const ok = placeEstaLiberado(p);
+	const allowed = await placeEstaLiberado(sistema, placeId);
 
 	return res.json({
-		a: ok
+		a: allowed
 	});
-});
-
-// ROTA DE TESTE
-app.get("/", (req, res) => {
-	res.send("API de whitelist online com Supabase.");
 });
 
 app.listen(PORT, () => {
@@ -87,10 +156,21 @@ const client = new Client({
 	intents: [GatewayIntentBits.Guilds]
 });
 
+const sistemaOption = option =>
+	option
+		.setName("sistema")
+		.setDescription("Sistema que deseja controlar")
+		.setRequired(true)
+		.addChoices(
+			{ name: "ATM", value: "atm" },
+			{ name: "Body Cam", value: "bodycam" }
+		);
+
 const commands = [
 	new SlashCommandBuilder()
 		.setName("liberar")
-		.setDescription("Libera um PlaceId para usar o script.")
+		.setDescription("Libera um PlaceId para usar um sistema.")
+		.addStringOption(sistemaOption)
 		.addStringOption(option =>
 			option
 				.setName("placeid")
@@ -101,7 +181,8 @@ const commands = [
 
 	new SlashCommandBuilder()
 		.setName("remover")
-		.setDescription("Remove um PlaceId da whitelist.")
+		.setDescription("Remove um PlaceId da whitelist de um sistema.")
+		.addStringOption(sistemaOption)
 		.addStringOption(option =>
 			option
 				.setName("placeid")
@@ -112,7 +193,8 @@ const commands = [
 
 	new SlashCommandBuilder()
 		.setName("listar")
-		.setDescription("Mostra todos os PlaceIds liberados.")
+		.setDescription("Lista PlaceIds liberados de um sistema.")
+		.addStringOption(sistemaOption)
 		.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ].map(command => command.toJSON());
 
@@ -138,67 +220,70 @@ client.on("interactionCreate", async interaction => {
 	if (!interaction.isChatInputCommand()) return;
 
 	if (interaction.commandName === "liberar") {
+		const sistema = interaction.options.getString("sistema");
 		const placeId = interaction.options.getString("placeid");
 
 		if (!/^\d+$/.test(placeId)) {
 			return interaction.reply({
-				content: "❌ Esse PlaceId é inválido. Use apenas números.",
+				content: "❌ PlaceId inválido. Use apenas números.",
 				ephemeral: true
 			});
 		}
 
-		const data = carregarWhitelist();
+		const ok = await liberarPlace(sistema, placeId);
 
-		if (data.places.includes(placeId)) {
+		if (!ok) {
 			return interaction.reply({
-				content: "⚠️ Esse PlaceId já está liberado: `" + placeId + "`",
+				content: "❌ Erro ao liberar no Supabase.",
 				ephemeral: true
 			});
 		}
-
-		data.places.push(placeId);
-		salvarWhitelist(data);
 
 		return interaction.reply({
-			content: "✅ PlaceId liberado com sucesso: `" + placeId + "`",
+			content: "✅ Liberado `" + placeId + "` para o sistema `" + sistema + "`.",
 			ephemeral: true
 		});
 	}
 
 	if (interaction.commandName === "remover") {
+		const sistema = interaction.options.getString("sistema");
 		const placeId = interaction.options.getString("placeid");
 
-		const data = carregarWhitelist();
-		const antes = data.places.length;
-
-		data.places = data.places.filter(id => id !== placeId);
-		salvarWhitelist(data);
-
-		if (data.places.length === antes) {
+		if (!/^\d+$/.test(placeId)) {
 			return interaction.reply({
-				content: "⚠️ Esse PlaceId não estava liberado: `" + placeId + "`",
+				content: "❌ PlaceId inválido. Use apenas números.",
+				ephemeral: true
+			});
+		}
+
+		const ok = await removerPlace(sistema, placeId);
+
+		if (!ok) {
+			return interaction.reply({
+				content: "❌ Erro ao remover no Supabase.",
 				ephemeral: true
 			});
 		}
 
 		return interaction.reply({
-			content: "✅ PlaceId removido da whitelist: `" + placeId + "`",
+			content: "✅ Removido `" + placeId + "` do sistema `" + sistema + "`.",
 			ephemeral: true
 		});
 	}
 
 	if (interaction.commandName === "listar") {
-		const data = carregarWhitelist();
+		const sistema = interaction.options.getString("sistema");
+		const places = await listarPlaces(sistema);
 
-		if (data.places.length === 0) {
+		if (places.length === 0) {
 			return interaction.reply({
-				content: "📋 Nenhum PlaceId liberado ainda.",
+				content: "📋 Nenhum PlaceId liberado para `" + sistema + "`.",
 				ephemeral: true
 			});
 		}
 
 		return interaction.reply({
-			content: "📋 PlaceIds liberados:\n```" + data.places.join("\n") + "```",
+			content: "📋 PlaceIds liberados para `" + sistema + "`:\n```" + places.join("\n") + "```",
 			ephemeral: true
 		});
 	}
