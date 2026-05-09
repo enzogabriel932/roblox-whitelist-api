@@ -52,20 +52,33 @@ async function placeEstaLiberado(sistema, placeId) {
 }
 
 async function liberarPlace(sistema, placeId) {
-	const { error } = await supabase
+	// Primeiro verifica se já existe
+	const { data: existente, error: erroConsulta } = await supabase
 		.from("whitelist_places")
-		.upsert(
-			{
-				sistema: sistema,
-				place_id: String(placeId)
-			},
-			{
-				onConflict: "sistema,place_id"
-			}
-		);
+		.select("id")
+		.eq("sistema", sistema)
+		.eq("place_id", String(placeId))
+		.maybeSingle();
 
-	if (error) {
-		console.error("Erro ao liberar PlaceId:", error);
+	if (erroConsulta) {
+		console.error("Erro ao consultar antes de liberar:", erroConsulta);
+		return false;
+	}
+
+	if (existente) {
+		return true;
+	}
+
+	// Se não existe, cria
+	const { error: erroInsert } = await supabase
+		.from("whitelist_places")
+		.insert({
+			sistema: sistema,
+			place_id: String(placeId)
+		});
+
+	if (erroInsert) {
+		console.error("Erro ao inserir PlaceId:", erroInsert);
 		return false;
 	}
 
