@@ -160,6 +160,29 @@ app.get("/c", async (req, res) => {
 	});
 });
 
+app.get("/debug", async (req, res) => {
+	const sistema = normalizarSistema(req.query.s || "atm");
+	const placeId = req.query.p;
+
+	const { data, error } = await supabase
+		.from("whitelist_places")
+		.select("*")
+		.eq("sistema", sistema)
+		.eq("place_id", String(placeId));
+
+	return res.json({
+		sistema,
+		placeId: String(placeId),
+		supabaseUrl: process.env.SUPABASE_URL,
+		error: error ? {
+			message: error.message,
+			code: error.code,
+			details: error.details
+		} : null,
+		rows: data
+	});
+});
+
 app.listen(PORT, () => {
 	console.log("API online na porta " + PORT);
 });
