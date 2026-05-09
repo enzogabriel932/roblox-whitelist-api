@@ -75,7 +75,7 @@ app.get("/c", (req, res) => {
 
 // ROTA DE TESTE
 app.get("/", (req, res) => {
-	res.send("API de whitelist online.");
+	res.send("API de whitelist online com Supabase.");
 });
 
 app.listen(PORT, () => {
