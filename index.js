@@ -52,7 +52,6 @@ async function placeEstaLiberado(sistema, placeId) {
 }
 
 async function liberarPlace(sistema, placeId) {
-	// Primeiro verifica se já existe
 	const { data: existente, error: erroConsulta } = await supabase
 		.from("whitelist_places")
 		.select("id")
@@ -69,7 +68,6 @@ async function liberarPlace(sistema, placeId) {
 		return true;
 	}
 
-	// Se não existe, cria
 	const { error: erroInsert } = await supabase
 		.from("whitelist_places")
 		.insert({
@@ -140,9 +138,7 @@ app.get("/check", async (req, res) => {
 	});
 });
 
-// ROTA CURTA PARA O ROBLOX
-// Exemplo: /c?s=atm&p=84715284711667
-// Exemplo: /c?s=bodycam&p=84715284711667
+// ROTA CURTA PARA ROBLOX
 app.get("/c", async (req, res) => {
 	const sistema = normalizarSistema(req.query.s || "atm");
 	const placeId = req.query.p;
@@ -160,6 +156,7 @@ app.get("/c", async (req, res) => {
 	});
 });
 
+// ROTA DE DEBUG
 app.get("/debug", async (req, res) => {
 	const sistema = normalizarSistema(req.query.s || "atm");
 	const placeId = req.query.p;
