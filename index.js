@@ -25,14 +25,8 @@ const SISTEMAS_VALIDOS = ["atm", "bodycam"];
 
 function normalizarSistema(sistema) {
 	if (!sistema) return "atm";
-
 	sistema = String(sistema).toLowerCase();
-
-	if (!SISTEMAS_VALIDOS.includes(sistema)) {
-		return null;
-	}
-
-	return sistema;
+	return SISTEMAS_VALIDOS.includes(sistema) ? sistema : null;
 }
 
 async function placeEstaLiberado(sistema, placeId) {
@@ -64,14 +58,12 @@ async function liberarPlace(sistema, placeId) {
 		return false;
 	}
 
-	if (existente) {
-		return true;
-	}
+	if (existente) return true;
 
 	const { error: erroInsert } = await supabase
 		.from("whitelist_places")
 		.insert({
-			sistema: sistema,
+			sistema,
 			place_id: String(placeId)
 		});
 
@@ -113,40 +105,33 @@ async function listarPlaces(sistema) {
 	return data.map(item => item.place_id);
 }
 
-// ROTA DE TESTE
 app.get("/", (req, res) => {
 	res.send("API de whitelist online com Supabase.");
 });
 
-// ROTA NORMAL
 app.get("/check", async (req, res) => {
 	const placeId = req.query.placeId;
 	const sistema = normalizarSistema(req.query.s || "atm");
 
 	if (!sistema || !placeId) {
-		return res.json({
-			allowed: false
-		});
+		return res.json({ allowed: false });
 	}
 
 	const allowed = await placeEstaLiberado(sistema, placeId);
 
 	return res.json({
-		allowed: allowed,
-		sistema: sistema,
+		allowed,
+		sistema,
 		placeId: String(placeId)
 	});
 });
 
-// ROTA CURTA PARA ROBLOX
 app.get("/c", async (req, res) => {
 	const sistema = normalizarSistema(req.query.s || "atm");
 	const placeId = req.query.p;
 
 	if (!sistema || !placeId) {
-		return res.json({
-			a: false
-		});
+		return res.json({ a: false });
 	}
 
 	const allowed = await placeEstaLiberado(sistema, placeId);
@@ -156,7 +141,6 @@ app.get("/c", async (req, res) => {
 	});
 });
 
-// ROTA DE DEBUG
 app.get("/debug", async (req, res) => {
 	const sistema = normalizarSistema(req.query.s || "atm");
 	const placeId = req.query.p;
@@ -252,73 +236,83 @@ client.once("clientReady", () => {
 client.on("interactionCreate", async interaction => {
 	if (!interaction.isChatInputCommand()) return;
 
-	if (interaction.commandName === "liberar") {
-		const sistema = interaction.options.getString("sistema");
-		const placeId = interaction.options.getString("placeid");
-
-		if (!/^\d+$/.test(placeId)) {
-			return interaction.reply({
-				content: "❌ PlaceId inválido. Use apenas números.",
-				ephemeral: true
-			});
-		}
-
-		const ok = await liberarPlace(sistema, placeId);
-
-		if (!ok) {
-			return interaction.reply({
-				content: "❌ Erro ao liberar no Supabase.",
-				ephemeral: true
-			});
-		}
-
-		return interaction.reply({
-			content: "✅ Liberado `" + placeId + "` para o sistema `" + sistema + "`.",
-			ephemeral: true
+	try {
+		await interaction.deferReply({
+			flags: 64
 		});
-	}
 
-	if (interaction.commandName === "remover") {
-		const sistema = interaction.options.getString("sistema");
-		const placeId = interaction.options.getString("placeid");
+		if (interaction.commandName === "liberar") {
+			const sistema = interaction.options.getString("sistema");
+			const placeId = interaction.options.getString("placeid");
 
-		if (!/^\d+$/.test(placeId)) {
-			return interaction.reply({
-				content: "❌ PlaceId inválido. Use apenas números.",
-				ephemeral: true
+			if (!/^\d+$/.test(placeId)) {
+				return interaction.editReply({
+					content: "❌ PlaceId inválido. Use apenas números."
+				});
+			}
+
+			const ok = await liberarPlace(sistema, placeId);
+
+			if (!ok) {
+				return interaction.editReply({
+					content: "❌ Erro ao liberar no Supabase."
+				});
+			}
+
+			return interaction.editReply({
+				content: "✅ Liberado `" + placeId + "` para o sistema `" + sistema + "`."
 			});
 		}
 
-		const ok = await removerPlace(sistema, placeId);
+		if (interaction.commandName === "remover") {
+			const sistema = interaction.options.getString("sistema");
+			const placeId = interaction.options.getString("placeid");
 
-		if (!ok) {
-			return interaction.reply({
-				content: "❌ Erro ao remover no Supabase.",
-				ephemeral: true
+			if (!/^\d+$/.test(placeId)) {
+				return interaction.editReply({
+					content: "❌ PlaceId inválido. Use apenas números."
+				});
+			}
+
+			const ok = await removerPlace(sistema, placeId);
+
+			if (!ok) {
+				return interaction.editReply({
+					content: "❌ Erro ao remover no Supabase."
+				});
+			}
+
+			return interaction.editReply({
+				content: "✅ Removido `" + placeId + "` do sistema `" + sistema + "`."
 			});
 		}
 
-		return interaction.reply({
-			content: "✅ Removido `" + placeId + "` do sistema `" + sistema + "`.",
-			ephemeral: true
-		});
-	}
+		if (interaction.commandName === "listar") {
+			const sistema = interaction.options.getString("sistema");
+			const places = await listarPlaces(sistema);
 
-	if (interaction.commandName === "listar") {
-		const sistema = interaction.options.getString("sistema");
-		const places = await listarPlaces(sistema);
+			if (places.length === 0) {
+				return interaction.editReply({
+					content: "📋 Nenhum PlaceId liberado para `" + sistema + "`."
+				});
+			}
 
-		if (places.length === 0) {
-			return interaction.reply({
-				content: "📋 Nenhum PlaceId liberado para `" + sistema + "`.",
-				ephemeral: true
+			return interaction.editReply({
+				content: "📋 PlaceIds liberados para `" + sistema + "`:\n```" + places.join("\n") + "```"
 			});
 		}
+	} catch (error) {
+		console.error("Erro ao responder interação:", error);
 
-		return interaction.reply({
-			content: "📋 PlaceIds liberados para `" + sistema + "`:\n```" + places.join("\n") + "```",
-			ephemeral: true
-		});
+		try {
+			if (interaction.deferred || interaction.replied) {
+				await interaction.editReply({
+					content: "❌ Ocorreu um erro interno ao executar o comando."
+				});
+			}
+		} catch (e) {
+			console.error("Erro ao enviar mensagem de erro:", e);
+		}
 	}
 });
 
