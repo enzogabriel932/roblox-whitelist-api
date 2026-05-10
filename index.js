@@ -21,7 +21,7 @@ const supabase = createClient(
 	process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const SISTEMAS_VALIDOS = ["atm", "bodycam"];
+const SISTEMAS_VALIDOS = ["atm", "bodycam", "matuto"];
 
 function normalizarSistema(sistema) {
 	if (!sistema) return "atm";
@@ -179,8 +179,9 @@ const sistemaOption = option =>
 		.setDescription("Sistema que deseja controlar")
 		.setRequired(true)
 		.addChoices(
-			{ name: "ATM", value: "atm" },
-			{ name: "Body Cam", value: "bodycam" }
+		   { name: "ATM", value: "atm" },
+	       { name: "Body Cam", value: "bodycam" },
+	       { name: "Matuto", value: "matuto" }
 		);
 
 const commands = [
