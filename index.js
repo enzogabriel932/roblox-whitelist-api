@@ -21,7 +21,7 @@ const supabase = createClient(
 	process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const SISTEMAS_VALIDOS = ["atm", "bodycam", "matuto", "salario"];
+const SISTEMAS_VALIDOS = ["atm", "bodycam", "matuto", "salario", "identidade"];
 
 function normalizarSistema(sistema) {
 	if (!sistema) return "atm";
@@ -182,7 +182,8 @@ const sistemaOption = option =>
 		   { name: "ATM", value: "atm" },
 	       { name: "Body Cam", value: "bodycam" },
 	       { name: "Matuto", value: "matuto" },
-			{ name: "Salario", value: "salario" }
+			{ name: "Salario", value: "salario" },
+			{ name: "Identidade", value: "identidade" }
 			
 		);
 
